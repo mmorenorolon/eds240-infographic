@@ -2,7 +2,6 @@
 
 ## Table of Contents
 - [Project Description](#projectdescription)
-- 
 - [Repository Structure](#repositorystructure)
 - [License](#license)
 

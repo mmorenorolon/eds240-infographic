@@ -1,0 +1,85 @@
+---
+title: "exploration"
+format: html
+---
+
+```{r}
+# Load packages
+library(tidyverse)
+library(janitor)
+library(here)
+```
+
+```{r,warning=FALSE}
+# Load data
+storm_files <- list.files(
+  path = "C:/Documents/MEDS/EDS240 - data visualization/eds240-infographic/data",
+  pattern = "\\.csv$",
+  full.names = TRUE
+)
+
+storm_data <- read_csv(storm_files[1], col_types = cols(.default = col_character()))
+
+for (f in storm_files[-1]) {
+  tmp <- read_csv(f, col_types = cols(.default = col_character()))
+  storm_data <- bind_rows(storm_data, tmp)
+}
+
+```
+
+```{r}
+# Clean data
+
+
+  
+  
+storm_data %>%
+  count(EVENT_TYPE) %>%
+  ggplot(aes(x = reorder(EVENT_TYPE, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "Number of reported events",
+    title = "Reported storm event frequency in Puerto Rico (1996–2025)"
+  )
+  
+```
+
+```{r}
+storm_data %>%
+  count(YEAR, EVENT_TYPE) %>%
+  ggplot(aes(x = YEAR, y = n, color = EVENT_TYPE)) +
+  geom_line(alpha = 0.8) +
+  labs(
+    y = "Number of events",
+    title = "Storm event reports over time"
+  )
+```
+
+```{r}
+storm_data %>%
+  filter(INJURIES_DIRECT > 0) %>%
+  ggplot(aes(x = EVENT_TYPE, y = INJURIES_DIRECT)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  coord_flip() +
+  labs(
+    y = "Direct injuries (log scale)",
+    x = NULL
+  )
+```
+
+```{r}
+storm_data %>%
+  group_by(EVENT_TYPE) %>%
+  summarise(
+    events = n(),
+    median_damage = median(DAMAGE_PROPERTY_NUM, na.rm = TRUE)
+  ) %>%
+  ggplot(aes(x = events, y = median_damage, label = EVENT_TYPE)) +
+  geom_point() +
+  scale_y_log10(labels = scales::dollar_format()) +
+  geom_text(nudge_y = 0.1, check_overlap = TRUE)
+```
+

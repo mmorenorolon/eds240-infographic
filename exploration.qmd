@@ -1,9 +1,11 @@
 ---
 title: "exploration"
 format: html
+editor_options: 
+  chunk_output_type: console
 ---
 
-```{r}
+```{r, message=FALSE,results='hide'}
 # Load packages
 library(tidyverse)
 library(janitor)
@@ -11,31 +13,62 @@ library(here)
 ```
 
 ```{r,warning=FALSE}
-# Load data
+# Save all data files
 storm_files <- list.files(
   path = "C:/Documents/MEDS/EDS240 - data visualization/eds240-infographic/data",
   pattern = "\\.csv$",
   full.names = TRUE
 )
 
-storm_data <- read_csv(storm_files[1], col_types = cols(.default = col_character()))
-
-for (f in storm_files[-1]) {
-  tmp <- read_csv(f, col_types = cols(.default = col_character()))
-  storm_data <- bind_rows(storm_data, tmp)
-}
+# Read in all data files and merge as one dataframe
+storm_data <- storm_files %>%
+  map_dfr(
+    ~ read_csv(.x, col_types = cols(.default = col_character()))
+  )
 
 ```
 
 ```{r}
 # Clean data
+storm_data_clean <- storm_data %>% 
+  # Convert variables to numeric
+  mutate(across(.cols = c(DEATHS_DIRECT, DEATHS_INDIRECT, INJURIES_DIRECT, INJURIES_INDIRECT, DAMAGE_PROPERTY_NUM, DAMAGE_CROPS_NUM, MAGNITUDE, BEGIN_RANGE, END_RANGE), ~ parse_number(.x))) %>%
+  
+  # Standardize time strings
+  mutate(
+    BEGIN_TIME = str_pad(BEGIN_TIME, width = 4, side = "left", 
+                         pad = "0"),
+    END_TIME = str_pad(END_TIME,   width = 4, side = "left", 
+                         pad = "0")
+  ) %>% 
+  
+  # Convert dates and derive time features
+  mutate(BEGIN_DATE = mdy(BEGIN_DATE),
+         END_DATE = mdy(END_DATE),
+         YEAR = year(BEGIN_DATE),
+         BEGIN_HOUR = as.integer(substr(BEGIN_TIME, 1, 2)),
+         END_HOUR = as.integer(substr(END_TIME, 1, 2))) %>% 
+  
+  # Select only the variables that will be used for analysis
+  select(EVENT_ID, EPISODE_ID,
+         STATE_ABBR, CZ_NAME_STR, CZ_TYPE, CZ_FIPS,
+         EVENT_TYPE, MAGNITUDE, MAGNITUDE_TYPE,
+         BEGIN_DATE, END_DATE, YEAR, BEGIN_HOUR, END_HOUR,
+         DEATHS_DIRECT, DEATHS_INDIRECT,
+         INJURIES_DIRECT, INJURIES_INDIRECT,
+         DAMAGE_PROPERTY_NUM, DAMAGE_CROPS_NUM,
+         SOURCE, FLOOD_CAUSE
+         ) %>% 
+  clean_names()
+```
 
 
-  
-  
-storm_data %>%
-  count(EVENT_TYPE) %>%
-  ggplot(aes(x = reorder(EVENT_TYPE, n), y = n)) +
+```{r}
+# Wrangle and plot data
+
+storm_data_clean %>%
+  count(event_type) %>%
+  ggplot(aes(x = reorder(event_type, n), y = n)) +
   geom_col() +
   coord_flip() +
   labs(
@@ -47,9 +80,9 @@ storm_data %>%
 ```
 
 ```{r}
-storm_data %>%
-  count(YEAR, EVENT_TYPE) %>%
-  ggplot(aes(x = YEAR, y = n, color = EVENT_TYPE)) +
+storm_data_clean %>%
+  count(year, event_type) %>%
+  ggplot(aes(x = year, y = n, color = event_type)) +
   geom_line(alpha = 0.8) +
   labs(
     y = "Number of events",
@@ -58,9 +91,9 @@ storm_data %>%
 ```
 
 ```{r}
-storm_data %>%
-  filter(INJURIES_DIRECT > 0) %>%
-  ggplot(aes(x = EVENT_TYPE, y = INJURIES_DIRECT)) +
+storm_data_clean %>%
+  filter(injuries_direct > 0) %>%
+  ggplot(aes(x = event_type, y = injuries_direct)) +
   geom_boxplot() +
   scale_y_log10() +
   coord_flip() +
@@ -71,15 +104,14 @@ storm_data %>%
 ```
 
 ```{r}
-storm_data %>%
-  group_by(EVENT_TYPE) %>%
+storm_data_clean %>%
+  group_by(event_type) %>%
   summarise(
     events = n(),
-    median_damage = median(DAMAGE_PROPERTY_NUM, na.rm = TRUE)
+    median_damage = median(damage_property_num, na.rm = TRUE)
   ) %>%
-  ggplot(aes(x = events, y = median_damage, label = EVENT_TYPE)) +
+  ggplot(aes(x = events, y = median_damage, label = event_type)) +
   geom_point() +
-  scale_y_log10(labels = scales::dollar_format()) +
   geom_text(nudge_y = 0.1, check_overlap = TRUE)
 ```
 

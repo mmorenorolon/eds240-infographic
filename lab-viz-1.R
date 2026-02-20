@@ -94,7 +94,7 @@ storm_long <- storm_summary %>%
 
 # Define storm palette
 storm_palette <- c(
-  events = "#AEB4BC",    
+  events = "#8A8F98",    
   median_damage = "#0B3C5D")
 
 bg <- "#F4F6F8"

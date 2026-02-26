@@ -1,0 +1,542 @@
+---
+title: "Drafting Visualizations for NOAA's Storm Events Database in Puerto Rico (1996-2025)"
+author: "Melannie Moreno Rolón"
+date: last-modified
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+#Load packages
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(viridis)
+library(tidyverse)
+library(janitor)
+library(here)
+library(showtext)
+library(ggtext)
+library(glue)
+library(sysfonts)
+library(waffle)
+```
+
+# III. Pre-planning
+
+Restate the questions you hope to answer with your inforgraphic. This should include one overarching question (think of this as driving the overall theme of your infographic) and at least three subquestions (each of which will be addressed by your infographic’s component visualizations). Have these questions changed at all since FPM #1? If yes, how so?
+
+With my infographic, I want to answer three questions:
+- What are the impacts in damages compared to the frequency of specific events? T
+- How common is each hazard relative to the total of hazards experienced in Puerto Rico?
+- How do hazards vary over the years and season?
+
+The overarching question is: What is the hazards landscape in Puerto Rico?
+These questions have changed since FPM #1. At first, I wanted to explore how different hazards affect people (injuries, deaths). I preserved impacts to property damages, but have since steered away from human impacts to focus more on trends within the events themselves.
+
+Explain which variables from your data set(s) you will use to answer the above questions, and how.
+
+For the Dumbbell Plot, I am using `EVENT_TYPE` and `DAMAGE_PROPERTY_NUM` to find the count of events per type and compare frequency vs median damage. For the Waffle Chart we are using just `EVENT_TYPE` also find the count of events per type, but the proportion of total events as well. Finally, with the heatmap, I am using `BEGIN_DATE` for which I will derive the variable year and month, and `EVENT_TYPE` to find the count of events per month by year to show seasonality and temporal variation.
+
+In FPM #2, you created some exploratory data viz to better understand your data. You may already have some ideas of how you plan to formally visualize your data, but it’s incredibly helpful to look at visualizations by other creators for inspiration. Find at least two data visualizations that you could (potentially) borrow / adapt pieces from. Download and embed them into your drafting-viz.qmd file, and explain which elements you might borrow (e.g. the graphic form, legend design, layout, etc.).
+
+I want to adapt from the USGS's Waffle Chart visualization for the creation of a waffle chart. ![Waffle Chart USGS](images/waffle-chart-inspiration.png). Elements I want to borrow from this plot is facetting by event type and the annotation style. The second visualization I am thinking of implementing/adapting is the heatmap from tidytuesday's "Seattle's Bike Counts per Time of Day and Weekday 2014-2019" ![Seattle Bike Counts](images/heatmap-seattle-bikes.png). From this chart, I want to adapt how they place the day of the week and the hours in the axis with my month and year data. 
+
+# IV. Hand-draw your anticipated visualizations
+![Infographic](images/Infographic.jpg)
+
+
+# V. Recreate your hand-drawn visualizations using code
+```{r}
+#Load and wrangle data
+# Data Loading & Wrangling
+# Save all data files
+storm_files <- list.files(
+  path = "C:/Documents/MEDS/EDS240 - data visualization/eds240-infographic/data",
+  pattern = "\\.csv$",
+  full.names = TRUE
+)
+
+# Read in all data files and merge as one dataframe
+storm_data <- storm_files %>%
+  map_dfr(
+    ~ read_csv(.x, col_types = cols(.default = col_character()))
+  )
+
+# Clean data
+# Keep only the events of interest
+storm_events <- c("Tropical Depression", "Tropical Storm", 
+                  "Hurricane (Typhoon)", "Heavy Rain",
+                  "Flood", "Flash Flood", "Coastal Flood",
+                  "Drought", "Excessive Heat", "Waterspout")
+
+storm_clean <- storm_data %>% 
+  # Convert variables to numeric
+  mutate(across(.cols = c(DEATHS_DIRECT, DEATHS_INDIRECT, INJURIES_DIRECT, INJURIES_INDIRECT, DAMAGE_PROPERTY_NUM, DAMAGE_CROPS_NUM, MAGNITUDE, BEGIN_RANGE, END_RANGE), ~ parse_number(.x))) %>%
+  
+  # Standardize time strings
+  mutate(
+    BEGIN_TIME = str_pad(BEGIN_TIME, width = 4, side = "left", 
+                         pad = "0"),
+    END_TIME = str_pad(END_TIME,   width = 4, side = "left", 
+                       pad = "0")) %>% 
+  
+  # Convert dates and derive time features
+  mutate(BEGIN_DATE = mdy(BEGIN_DATE),
+         END_DATE = mdy(END_DATE),
+         YEAR = year(BEGIN_DATE),
+         BEGIN_HOUR = as.integer(substr(BEGIN_TIME, 1, 2)),
+         END_HOUR = as.integer(substr(END_TIME, 1, 2))) %>% 
+  
+  # Select only the variables that will be used for analysis
+  select(EVENT_ID, EPISODE_ID,
+         STATE_ABBR, CZ_NAME_STR, CZ_TYPE, CZ_FIPS,
+         EVENT_TYPE, MAGNITUDE, MAGNITUDE_TYPE,
+         BEGIN_DATE, END_DATE, YEAR, BEGIN_HOUR, END_HOUR,
+         DEATHS_DIRECT, DEATHS_INDIRECT,
+         INJURIES_DIRECT, INJURIES_INDIRECT,
+         DAMAGE_PROPERTY_NUM, DAMAGE_CROPS_NUM,
+         SOURCE, FLOOD_CAUSE) %>% 
+  
+  # Standardize variable names
+  clean_names() %>% 
+  
+  # Filter for events of interest
+  filter(event_type %in% storm_events)
+```
+
+
+
+## Dumbbell Chart Code
+```{r}
+# Create dataframe to keep only events where median property damage values are greater than 0
+storm_summary <- storm_clean %>%
+  group_by(event_type) %>%
+  summarise(
+    events = n(),
+    median_damage = median(damage_property_num[damage_property_num > 0], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(median_damage))
+
+# Convert data to long format
+storm_long <- storm_summary %>%
+  pivot_longer(
+    cols = c(events, median_damage),
+    names_to = "metric",
+    values_to = "value")
+
+# Define storm palette
+storm_palette <- c(
+  events = "#8A8F98",    
+  median_damage = "#0B3C5D")
+
+bg <- "#F4F6F8"
+
+# Add font
+font_add_google("Inter", "inter")
+
+# font awesome icon
+font_add(family = "fa-brands",
+         regular = here::here("fonts", "Font Awesome 7 Brands-Regular-400.otf"))
+
+
+# title
+title <- glue("Storm 
+<span style='color:#8A8F98;'>frequency</span> 
+vs. 
+<span style='color:#0B3C5D;'>property damage</span> 
+in Puerto Rico")
+
+subtitle <- "The most frequent events are not always the most damaging."
+
+#icons + username
+github_icon <- "&#xf092"
+github_username <- "mmorenorolon"
+
+
+caption <- glue::glue(
+  "Data Source: NOAA Storm Events Database<br>
+  <span style='font-family:fa-brands fa-square-github;'>{github_icon};</span>
+  {github_username}"
+)
+
+annotation <-  glue("Economic vulnerability in Puerto Rico 
+                    is shaped both by persistent everyday 
+                    hazards and by episodic extreme events.")
+
+storm_plot <- ggplot(storm_long, aes(x = value, y = event_type, color = metric)) +
+  
+  # Connecting line between frequency and damage
+  geom_line(aes(group = event_type),
+            color = "grey75",
+            linewidth = 0.6) +
+  
+  # Points
+  geom_point(size = 3.8) +
+  
+  # Add log scale to show difference between points
+  scale_x_log10(breaks = c(100, 1000, 10000, 100000, 1000000),
+                labels = c("100", "1k", "10k", "100k", "1M")) +
+  
+  scale_y_discrete(
+    labels = c("Tropical Storm" = "Tropical storm",
+               "Hurricane (Typhoon)" = "Hurricane",
+               "Heavy Rain" = "Heavy rain",
+               "Flood" = "Flood",
+               "Flash Flood" = "Flash flood",
+               "Drought" = "Drought",
+               "Coastal Flood" = "Coastal flood")) +
+  
+  # Manual colors
+  scale_color_manual(values = storm_palette) +
+  
+  labs(title = title, subtitle = subtitle, caption = caption, 
+       x = NULL, y = NULL)  +
+   
+  # Annotation
+  annotate("text",
+           x = 10000,
+           y = "Flood",
+           label = annotation,
+           hjust = 0,
+           size = 3.5,
+           family = "inter",
+           color = "#0B3C5D") +
+  
+  theme_classic(base_family = "inter", base_size = 17) +
+  
+  theme(plot.title.position = "plot",
+
+        plot.title = ggtext::element_markdown(family = "inter",
+                                          face = "bold",
+                                          size = rel(0.98),
+                                          lineheight = 1.2),
+        
+        plot.subtitle = element_text(family = "inter",
+                                 size = rel(0.9),
+                                 margin = margin(b = 8)),
+        
+        plot.margin = margin(t = 1, r = 1, b = 1, l = 1, unit = "cm"),
+        
+        plot.background = element_rect(fill = bg),
+        
+        panel.background = element_rect(fill = bg),
+        
+        axis.text.x = element_text(family = "inter",
+                             size = rel(0.7)),
+        
+        axis.text.y = element_markdown(family = "inter",
+                                       size = rel(0.7)),
+        
+        axis.title.x = element_text(family = "inter",
+                                size = rel(0.75), 
+                                margin = margin(t = 15)),
+        axis.title.y = element_blank(),
+        
+        plot.caption = ggtext::element_markdown(family = "inter",
+                                            face = "italic",
+                                            size = rel(0.53)),
+        
+        legend.position = "none")
+
+showtext_auto(enable = TRUE)
+storm_plot
+showtext_auto(enable = FALSE)
+
+
+#..............inset PR map.............
+
+adm1 <- rnaturalearth::ne_download(
+  scale = 10,
+  type = "admin_1_states_provinces",
+  category = "cultural",
+  returnclass = "sf"
+)
+
+# Filter Puerto Rico (try both name fields)
+pr_sf <- adm1 %>%
+  filter(name == "Puerto Rico" | name_en == "Puerto Rico")
+
+pr_map <- ggplot(pr_sf) +
+  geom_sf(fill = "white", color = "#4E514D", linewidth = 0.4) +
+  coord_sf(datum = NA) +
+  theme_void()
+
+storm_plot_inset <- storm_plot +
+  patchwork::inset_element(
+    pr_map,
+    left = 0.05, bottom = 0.02, right = 0.3, top = 0.26,
+    align_to = "full"
+  )
+
+showtext_auto(enable = TRUE)
+storm_plot_inset
+
+
+
+#..............enable {showtext} for newly opened GD.............
+showtext_auto(enable = TRUE)
+
+#...................set resolution to match GD...................
+showtext_opts(dpi = 300)
+
+#..............write plot to file (aka save as png)..............
+ggsave(
+  filename = here::here("images", "storm_plot.png"),
+  plot = storm_plot,
+  device = ragg::agg_png,
+  width = 8, 
+  height = 7,
+  unit = "in",
+  dpi = 300
+)
+
+#...............turn off {showtext} text rendering...............
+showtext_auto(enable = FALSE)
+```
+
+
+
+#  Waffle Chart Mockup
+```{r}
+font_add_google("Inter", "inter")
+showtext_auto(TRUE)
+showtext_opts(dpi = 300)
+
+pal <- c(
+  "Flood-related"      = "#4F6D7A",  # slate blue
+  "Tropical cyclones"  = "#0B3C5D",  # deep storm blue (keep anchor)
+  "Severe wind"        = "#6C8EAD",  # steel blue
+  "Heat & drought"     = "#C27A3F",  # richer amber
+  "Coastal & marine"   = "#2F7F8C",  # deeper teal
+  "Fire & lightning"   = "#B55353",  # muted brick red
+  "Other rare"         = "#8E99A4")   # cooler soft gray-blue
+
+bg <- "#F6F8FA"
+grid <- "#E6E9EF"
+text <- "#111827"
+subtext <- "#374151"
+
+# Select events relevant to Puerto Rico
+pr_events_collapsed <- storm_data %>%
+  mutate(
+    EVENT_TYPE = as.character(EVENT_TYPE),
+    hazard_cat = case_when(
+      EVENT_TYPE %in% c("Flood", "Flash Flood", "Coastal Flood", "Heavy Rain", "Debris Flow") ~ "Flood-related",
+      EVENT_TYPE %in% c("Hurricane (Typhoon)", "Tropical Storm", "Tropical Depression") ~ "Tropical cyclones",
+      EVENT_TYPE %in% c("Thunderstorm Wind", "Strong Wind", "High Wind", "Tornado", "Funnel Cloud") ~ "Severe wind",
+      EVENT_TYPE %in% c("Excessive Heat", "Drought", "Extreme Cold/Wind Chill") ~ "Heat & drought",
+      EVENT_TYPE %in% c("Rip Current", "High Surf", "Waterspout", "Seiche") ~ "Coastal & marine",
+      EVENT_TYPE %in% c("Wildfire", "Lightning") ~ "Fire & lightning",
+      TRUE ~ "Other rare"
+    ))
+
+# Summarize to 100%
+pr_event_props <- pr_events_collapsed %>%
+  count(hazard_cat) %>%
+  mutate(prop = n / sum(n),
+         parts = round(prop * 100)) %>%
+  arrange(desc(parts))
+
+# Force total squares to be exactly 100
+diff <- 100 - sum(pr_event_props$parts)
+if (diff != 0) {
+  pr_event_props$parts[which.max(pr_event_props$parts)] <-
+    pr_event_props$parts[which.max(pr_event_props$parts)] + diff
+}
+
+# Ensure palette order and drop missing
+pr_event_props <- pr_event_props %>%
+  mutate(hazard_cat = factor(hazard_cat, levels = names(pal))) %>%
+  arrange(hazard_cat)
+
+waffle_vector <- setNames(pr_event_props$parts, pr_event_props$hazard_cat)
+
+waffle(waffle_vector, rows = 10, size = 0.5, 
+       colors = RColorBrewer::brewer.pal(n = length(waffle_vector), "Set3") ) + 
+  labs(title = "Proportion of Storm Event Types in Puerto Rico", 
+       subtitle = "Each square represents 1% of all recorded events", 
+       fill = "Event Type" ) + 
+  theme_minimal(base_size = 14)
+
+# Editorial waffle plot
+waffle_plot <- waffle::waffle(
+  parts = waffle_vector,
+  rows = 10,
+  size = 0.55,
+  colors = pal[names(waffle_vector)]
+) +
+  labs(
+    title = "What Puerto Rico experiences most often",
+    subtitle = "Each square represents 1% of recorded storm events (1996–2025)",
+    caption = "Source: NOAA Storm Events Database (Puerto Rico subset)."
+  ) +
+  theme_minimal(base_family = "inter", base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = bg, 
+                                   color = NA),
+    panel.background = element_rect(fill = bg, 
+                                    color = NA),
+    
+    plot.title = element_text(face = "bold", size = 18, color = text),
+    plot.subtitle = element_text(size = rel(0.87), 
+                                 color = subtext, 
+                                 margin = margin(b = 10)),
+    plot.caption = element_text(size = 9.5, 
+                                color = subtext, 
+                                margin = margin(t = 10)),
+    
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10, 
+                               color = subtext),
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    plot.margin = margin(16, 16, 16, 16))
+
+waffle_plot
+
+#--- Save plot ---
+showtext_opts(dpi = 320)
+
+ggsave(here("images","storms-waffle.png"), 
+       dpi=320, 
+       width = 12, 
+       height = 9)
+
+showtext_auto(FALSE)
+```
+
+# Heatmap Mockup
+```{r}
+# Heatmap dataframe
+heat_df <- storm_data %>%
+  
+  # Extract year and month from beginning date 
+  mutate(begin_date = mdy(BEGIN_DATE),
+         year = year(begin_date),
+         month = month(begin_date),  
+         # Label months with month name abbreviations 
+         month_name = factor(month.abb[month], levels = month.abb)) %>%
+  
+  # Remove NAs from year and month columns
+  filter(!is.na(year), !is.na(month)) %>%
+  
+  # Count events for each year and month
+  count(year, month, month_name, name = "events") %>%
+  
+  # Replace NAs with 0 for each event
+  complete(year = full_seq(year, 1),
+           month = 1:12,
+           fill = list(events = 0)) %>%
+  
+  # Save month_name as a factor and abbreviate month names, sort month names
+  mutate(month_name = factor(month.abb[month], levels = month.abb))
+
+# Save minimum and maximum year for annotations
+yr_min <- min(heat_df$year, na.rm = TRUE)
+yr_max <- max(heat_df$year, na.rm = TRUE)
+
+
+# Build Heatmap
+use_magma <- TRUE
+
+p <- ggplot(heat_df, aes(x = year, y = month_name, fill = events)) +
+  
+  # Hurricane season shading  Aug–Oct band across all years
+  annotate("rect", xmin = yr_min - 0.5, xmax = yr_max + 0.5,
+           ymin = which(levels(heat_df$month_name) == "Aug") - 0.5,
+           ymax = which(levels(heat_df$month_name) == "Oct") + 0.5,
+           fill = "white", alpha = 0.8) +
+  
+  # Create heatmap tiles
+  geom_tile(width = 1, height = 1, color = NA) +
+  
+  # Add thin white lines between months
+  geom_hline(yintercept = seq(1.5, 11.5, by = 1), color = "white", linewidth = 0.35, alpha = 0.7) +
+  
+  # Add thinner lines to divide years 
+  geom_vline(xintercept = seq(yr_min + 0.5, yr_max - 0.5, by = 1),
+             color = "white", linewidth = 0.2, alpha = 0.25) +
+  
+  # Add lines to highlight extreme years (Hurricane Maria and Hurricane Fiona)
+  geom_vline(xintercept = 2017, linewidth = 0.7, color = "white", 
+             alpha = 0.8) +
+  geom_vline(xintercept = 2022, linewidth = 0.7, color = "white", 
+             alpha = 0.8) +
+  
+  annotate("label",
+    x = 2017, y = "Oct",
+    label = "Maria (2017)",
+    family = "inter",
+    size = 3.2,
+    fill = "white", alpha = 0.9,
+    color = "#111827",
+    label.r = unit(0.15, "lines")) +
+  
+  annotate("label", x = 2022, y = "Sep", label = "Fiona (2022)",
+           family = "inter", size = 3.2, fill = "white", alpha = 0.9,
+           color = "#111827", label.r = unit(0.15, "lines")) +
+  
+  # Label Hurricane Season
+  annotate("text", x = yr_min + 1, y = "Aug", 
+           label = "Hurricane season (Aug–Oct)", family = "inter",
+           size = 3.4, hjust = 0, color = "white", alpha = 0.9) +
+  
+  # Customize x-axis scale 
+  scale_x_continuous(breaks = pretty_breaks(n = 8), 
+                     expand = expansion(mult = c(0.01, 0.02))) +
+  
+  labs(title = "Storm event frequency by month and year",
+       caption = "Data Source:NOAA Storm Events Database",
+       x = NULL, y = NULL, fill = "Events") +
+  
+  # Customize theme elements
+  theme_minimal(base_family = "inter", base_size = 13) +
+  theme(plot.background = element_rect(fill = "#F6F8FA", color = NA),
+        panel.background = element_rect(fill = "#F6F8FA", color = NA),
+        panel.grid = element_blank(),
+        
+        axis.text.x = element_text(color = "#374151"),
+        axis.text.y = element_text(color = "#374151"),
+        
+        legend.title = element_text(color = "#374151"),
+        legend.text = element_text(color = "#374151"),
+        
+        plot.title = element_text(face = "bold", 
+                                  size = 18, 
+                                  color = "#111827"),
+        plot.subtitle = element_text(size = 11.5, 
+                                     color = "#374151", 
+                                     margin = margin(b = 8)),
+        plot.margin = margin(14, 14, 14, 14)) +
+  scale_fill_viridis_c(option = "magma",
+                       begin = 0.1,
+                       end = 0.95,
+                       labels = scales::comma)
+
+
+p
+```
+
+# VI. Answer a few last questions about your work and progress
+
+1. What are the key insights you want your infographic to communicate, and how will your design choices help highlight and support those messages?
+
+My infographic aims to communicate three core insights about Puerto Rico’s storm‑hazard landscape: which hazards are most common, how their impacts compare to their frequency, and how storm activity varies across months and years. Each visualization is  chosen to highlight one of these insights: the waffle chart clarifies the overall composition of hazards, the dumbbell plot contrasts frequency with property‑damage severity, and the heatmap reveals seasonal and long‑term temporal patterns.
+
+2. What challenges did you encounter or anticipate encountering as you continue to build / iterate on your visualizations in R? If you struggled with mocking up any of your three visualizations, describe those challenges here.
+
+As I iterated on my visualizations in R, I encountered challenges related to data cleaning, package behavior, and visual clarity. Parsing dates stored as character strings required careful handling, and converting property‑damage values into usable numeric fields introduced additional preprocessing steps. Some visualization like the heatmap and waffle chart, required reshaping or expanding the data in ways that were not immediately intuitive.
+
+3. What ggplot extension tools / packages do you need to use to build your visualizations? Are there any that we haven’t covered in class that you’ll be learning how to use for your visualizations?
+
+To build my visualizations, I rely primarily on ggplot2 along with supporting packages such as dplyr, lubridate, and viridis for data wrangling and color palettes. The main extension package I am using beyond what we covered in class is the waffle package. I may also use layout packages like patchwork to arrange the final infographic, but the waffle package is the only major new tool I needed to learn specifically for this project.
+
+4. What feedback do you need from the instructional team and / or your peers to ensure that your intended message and key insights are clear?
+
+I would appreciate feedback on whether the narrative connecting the three visualizations feels cohesive and whether each chart’s “question” is immediately understandable to viewers. I’m also looking for guidance on the readability of the heatmap regarding color choices and the density of information across months and years. Finally, I’d value input on whether the balance between analytical depth and public accessibility is effective, and whether any annotations or design elements could be refined to strengthen the overall communication.

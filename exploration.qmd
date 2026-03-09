@@ -87,10 +87,10 @@ storm_clean <- storm_data %>%
          ) %>% 
   
   # Standardize variable names
-  clean_names() %>% 
+  clean_names() #%>% 
   
   # Filter for events of interest
-  filter(event_type %in% storm_events)
+  #filter(event_type %in% storm_events)
 ```
 
 # Data Wrangling and Plotting
@@ -166,7 +166,7 @@ storm_clean %>%
     # Calculate the median property damage
     median_damage = median(damage_property_num, na.rm = TRUE),
     # Keep only property damage numbers that are not zero
-    median_damage_nz = median(damage_property_num[damage_property_num > 0], na.rm = TRUE),
+    median_damage_nz = median(damage_property_num, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   # Filter out any nonzero values

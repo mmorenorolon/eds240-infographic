@@ -61,13 +61,7 @@ This project follows the following workflow:
 eds240-infographic
 ├───data
 ├───drafting-viz_files
-│   ├───figure-html
-│   └───libs
-│       ├───bootstrap
-│       ├───clipboard
 │       └───quarto-html
-│           ├───axe
-│           └───tabsets
 ├───fonts
 ├───icons
 └───images
